@@ -1,0 +1,9 @@
+.metadata/
+stm32_i2c/.settings/
+stm32_i2c/Debug/
+stm32_i2c/Startup/
+stm32_i2c/.cproject
+stm32_i2c/.project
+STM32F446RETX_FLASH.ld
+STM32F446RETX_RAM.ld
+

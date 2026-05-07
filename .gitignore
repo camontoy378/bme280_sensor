@@ -6,4 +6,6 @@ stm32_i2c/.cproject
 stm32_i2c/.project
 STM32F446RETX_FLASH.ld
 STM32F446RETX_RAM.ld
+stm32_i2c/Src/syscalls.c
+stm32_i2c/Src/sysmem.c
 

@@ -17,9 +17,149 @@
  */
 
 #include <stdint.h>
+#include <stdio.h>
+
+#include "stm32f446xx.h"
+#include "stm32f446xx_gpio_driver.h"
+#include "stm32f446xx_i2c_driver.h"
+
+#define BME280_ADDR 0x76
+
+//Register settings
+#define REG_F5_ADDR         0xF5
+#define REG_F4_ADDR         0xF4
+
+//Config one sample every 1s
+//Register 0xF5
+//Set Bit 7:5 to b'101'
+#define REG_F5_SET          (5 << 5)
+
+//Config Power mode to Normal
+//Set Bit 1:0 to b'11'
+//Config over sampling of temperature data to highest resolution
+//Register 0xF4
+//Set Bit 7:5 to b'101'
+#define REG_F4_SET          ( (5 << 5) | (3 << 0) )
+
+//DIG Tx register addresses
+#define DIG_T1				0x88
+#define DIG_T2				0x8A
+#define DIG_T3				0x8C
+
+uint8_t setup_reg_data[] = {REG_F5_ADDR,
+                            REG_F5_SET,
+                            REG_F4_ADDR,
+                            REG_F4_SET
+                            };
+
+I2C_Handle_t i2c_handle;
+
+//Receive buffer
+//uint8_t rcv_buf[32];
+uint8_t rcv_buf[2];
+
+void delay(void)
+{
+	//for(uint32_t i = 0; i < 500000/2; i++);
+	for(uint32_t i = 0; i < 500000; i++);
+}
+
+void i2c_gpio_init(void)
+{
+	GPIO_Handle_t i2c_pins;
+
+	i2c_pins.pGPIOx								= GPIOB;
+	i2c_pins.GPIO_PinConfig.GPIO_PinMode		= GPIO_MODE_ALTFN;
+	i2c_pins.GPIO_PinConfig.GPIO_PinAltFunMode	= 4;
+	i2c_pins.GPIO_PinConfig.GPIO_PinOPType		= GPIO_OP_TYPE_OD;
+	i2c_pins.GPIO_PinConfig.GPIO_PinPuPdControl	= GPIO_PIN_PU;
+	i2c_pins.GPIO_PinConfig.GPIO_PinSpeed		= GPIO_SPEED_FAST;
+
+	//SCL
+	i2c_pins.GPIO_PinConfig.GPIO_PinNumber		= 6;
+
+	GPIO_Init(&i2c_pins);
+
+	//SDA
+	i2c_pins.GPIO_PinConfig.GPIO_PinNumber		= 7;
+
+	GPIO_Init(&i2c_pins);
+}
+
+void i2c1_init(void)
+{
+	i2c_handle.pI2Cx						= I2C1;
+	i2c_handle.I2C_Config.I2C_ACKControl	= I2C_ACK_ENABLE;
+	i2c_handle.I2C_Config.I2C_DeviceAddress	= BME280_ADDR;
+	i2c_handle.I2C_Config.I2C_FMDutyCycle	= I2C_FM_DUTY_2;
+	i2c_handle.I2C_Config.I2C_SCLSpeed		= I2C_SCL_SPEED_SM;
+
+	I2C_Init(&i2c_handle);
+}
+
+void i2c_read_register_data(I2C_Handle_t *pI2CHandle, uint8_t *pTxbuffer, uint8_t *pRxBuffer, uint32_t Len)
+{
+	//Ping register to send data
+	I2C_MasterSendData(pI2CHandle, pTxbuffer, 1, BME280_ADDR, I2C_ENABLE_SR);
+
+	//Receive data from register
+	I2C_MasterReceiveData(pI2CHandle, pRxBuffer, Len, BME280_ADDR, I2C_ENABLE_SR);
+}
 
 int main(void)
 {
+	printf("Starting application\n");
+
+    //Initialize GPIO pins
+	i2c_gpio_init();
+
+	//Initialize I2C
+	i2c1_init();
+
+	//Enable I2C
+	I2C_PeripheralControl(I2C1, ENABLE);
+
+	//Enable ACK?
+	//ACK bit is made 1 after PE=1
+	I2C_ManageAcking(I2C1, I2C_ACK_ENABLE);
+
+
+	//Configure registers
+	uint32_t array_length = sizeof(setup_reg_data);
+	I2C_MasterSendData(&i2c_handle, setup_reg_data, array_length, BME280_ADDR, I2C_ENABLE_SR);
+
+	//Get DIG T data
+	//int* reg_addr	= DIG_T1;
+	uint8_t reg_addr	= 0x88;
+
+
+	i2c_read_register_data(&i2c_handle, &reg_addr, rcv_buf, 2);
+	int dig_t1 = (int) rcv_buf;
+	printf("Data : %d", dig_t1);
+	delay();
+
+	reg_addr	= 0x8A;
+	i2c_read_register_data(&i2c_handle, &reg_addr, rcv_buf, 2);
+	int dig_t2 = (int) rcv_buf;
+	printf("Data : %x", dig_t2);
+	delay();
+
+	reg_addr	= 0x8C;
+	i2c_read_register_data(&i2c_handle, &reg_addr, rcv_buf, 2);
+	int dig_t3 = (int) rcv_buf;
+	printf("Data : %d", dig_t3);
+	delay();
+
     /* Loop forever */
-	for(;;);
+	while(1)
+	{
+
+		//Adding NULL character because transmission doesn't have one? What about \r\n?
+		//int len = 1;
+		//rcv_buf[len + 1] = '\0';
+
+		//printf("Data : %s", rcv_buf);
+		//delay();
+
+	}
 }

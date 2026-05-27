@@ -61,7 +61,9 @@ uint8_t rcv_buf[2];
 void delay(void)
 {
 	//for(uint32_t i = 0; i < 500000/2; i++);
-	for(uint32_t i = 0; i < 500000; i++);
+	//for(uint32_t i = 0; i < 500000; i++);
+	for(uint32_t i = 0; i < 5000000; i++);
+
 }
 
 void i2c_gpio_init(void)
@@ -97,13 +99,41 @@ void i2c1_init(void)
 	I2C_Init(&i2c_handle);
 }
 
-void i2c_read_register_data(I2C_Handle_t *pI2CHandle, uint8_t *pTxbuffer, uint8_t *pRxBuffer, uint32_t Len)
+int read_register_data(I2C_Handle_t *pI2CHandle, uint8_t *pTxbuffer, uint8_t *pRxBuffer, uint32_t Len)
 {
 	//Ping register to send data
 	I2C_MasterSendData(pI2CHandle, pTxbuffer, 1, BME280_ADDR, I2C_ENABLE_SR);
 
 	//Receive data from register
 	I2C_MasterReceiveData(pI2CHandle, pRxBuffer, Len, BME280_ADDR, I2C_ENABLE_SR);
+
+	if (Len > 1)
+	{
+		return ( (pRxBuffer[1] << 8) | pRxBuffer[0] );
+	}
+	else
+	{
+		return pRxBuffer[0];
+	}
+
+}
+
+int get_temperature(uint32_t adc_t, uint16_t dig_t1, uint16_t dig_t2, uint16_t dig_t3)
+{
+	uint32_t var1, var2, t_fine;
+	int temp_celcius, temp_farenheit;
+
+	var1 = ( ( ( ( adc_t >> 3 ) - ( ( uint32_t ) dig_t1 << 1 ) ) ) * ( (uint32_t) dig_t2)) >> 11;
+	var2 = ( ( ( ( ( adc_t >> 4 ) - ( ( uint32_t ) dig_t1) ) * (( adc_t >> 4) - ( (uint32_t) dig_t1 ))) >> 12) * ((uint32_t) dig_t3)) >> 14;
+
+	t_fine = var1 + var2;
+
+	//Temperature is in Celcius and is off by 100.
+	temp_celcius = ( t_fine * 5 + 128) >> 8;
+	temp_farenheit 	= ((temp_celcius * 9)/5) + 32 * 100;
+
+
+	return temp_farenheit;
 }
 
 int main(void)
@@ -111,9 +141,11 @@ int main(void)
 	printf("Starting application\n");
 
     //Initialize GPIO pins
+	printf("Initialize GPIO pins\n");
 	i2c_gpio_init();
 
 	//Initialize I2C
+	printf("Initialize and enableI2C\n");
 	i2c1_init();
 
 	//Enable I2C
@@ -125,41 +157,62 @@ int main(void)
 
 
 	//Configure registers
+	printf("Configure registers\n");
 	uint32_t array_length = sizeof(setup_reg_data);
 	I2C_MasterSendData(&i2c_handle, setup_reg_data, array_length, BME280_ADDR, I2C_ENABLE_SR);
 
-	//Get DIG T data
+	//Get DIG T calibration data
+	printf("Get calibration data\n");
 	//int* reg_addr	= DIG_T1;
 	uint8_t reg_addr	= 0x88;
-
-
-	i2c_read_register_data(&i2c_handle, &reg_addr, rcv_buf, 2);
-	int dig_t1 = (int) rcv_buf;
-	printf("Data : %d", dig_t1);
-	delay();
+	uint16_t dig_t1 = read_register_data(&i2c_handle, &reg_addr, rcv_buf, 2);
+	printf("Data : %x\n", dig_t1);
 
 	reg_addr	= 0x8A;
-	i2c_read_register_data(&i2c_handle, &reg_addr, rcv_buf, 2);
-	int dig_t2 = (int) rcv_buf;
-	printf("Data : %x", dig_t2);
-	delay();
+	uint16_t dig_t2 = read_register_data(&i2c_handle, &reg_addr, rcv_buf, 2);
+	printf("Data : %x\n", dig_t2);
 
 	reg_addr	= 0x8C;
-	i2c_read_register_data(&i2c_handle, &reg_addr, rcv_buf, 2);
-	int dig_t3 = (int) rcv_buf;
-	printf("Data : %d", dig_t3);
-	delay();
+	uint16_t dig_t3 = read_register_data(&i2c_handle, &reg_addr, rcv_buf, 2);
+	printf("Data : %d\n", dig_t3);
+
+
+	//Correct calibration values. Make variables unsigned to match dig_c1 output ?
+	if (dig_t2 > 32767)
+	{
+		dig_t2 = dig_t2 - 65536;
+	}
+
+	if (dig_t3 > 32767)
+	{
+		dig_t3 = dig_t3 - 65536;
+	}
+
+	uint32_t raw_reg_temp;
+	int temperature;
 
     /* Loop forever */
 	while(1)
 	{
+		//Read temperature from register
+		printf("Read temperature from register\n");
+		reg_addr	= 0xfa;
+		uint8_t d1 = read_register_data(&i2c_handle, &reg_addr, rcv_buf, 2);
 
-		//Adding NULL character because transmission doesn't have one? What about \r\n?
-		//int len = 1;
-		//rcv_buf[len + 1] = '\0';
+		reg_addr	= 0xfb;
+		uint8_t d2 = read_register_data(&i2c_handle, &reg_addr, rcv_buf, 2);
 
-		//printf("Data : %s", rcv_buf);
-		//delay();
+		reg_addr	= 0xfc;
+		uint8_t d3 = read_register_data(&i2c_handle, &reg_addr, rcv_buf, 2);
+
+		//d3[0:3] are not valid so adjustment is made
+		raw_reg_temp = ( (d1 << 16) | (d2 << 8) | d3) >> 4;
+
+		temperature = get_temperature(raw_reg_temp, dig_t1, dig_t2, dig_t3);
+
+		printf("Temperature (F)= %d.%d\n", temperature / 100, temperature % 100);
+
+		delay();
 
 	}
 }

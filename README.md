@@ -1,0 +1,1 @@
+Developed STM32 firmware to interface with a Bosch BME280 environmental sensor over I2C and acquire temperature data. Targeted an STM32F446xx ARM Cortex-M4 microcontroller and integrated reusable peripheral driver libraries developed during an embedded-systems course.
